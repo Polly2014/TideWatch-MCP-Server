@@ -482,8 +482,9 @@ async def server_status():
             "get_money_flow_detail — 资金流向详细分析",
             "get_stock_news_report — 个股新闻消息面",
             "get_north_flow_report — 北向资金分析",
-            "review_signals — 🆕 查看历史信号和胜率统计",
-            "update_signal_outcomes — 🆕 回填历史信号实际走势",
+            "review_signals — 查看历史信号和胜率统计",
+            "update_signal_outcomes — 回填历史信号实际走势",
+            "scan_market — 🆕 全市场扫描强弱股 Top/Bottom N",
         ],
     }
 
@@ -551,6 +552,103 @@ async def update_signal_outcomes():
     return {
         "updated": result,
         "message": f"回填完成: 5日={result['5d']}条, 10日={result['10d']}条, 20日={result['20d']}条",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@mcp.tool()
+async def scan_market(top_n: int = 10):
+    """
+    全市场扫描 — 找出今日最强和最弱的股票
+
+    从全市场 A 股中，按涨跌幅和量比初筛，然后对候选股做技术分析评分，
+    输出技术面最强的 Top N 和最弱的 Bottom N。
+
+    适合用来发现今天的热点和异动，找到值得深入分析的标的。
+
+    Args:
+        top_n: 返回最强/最弱各多少只（默认10）
+
+    Returns:
+        强势股 Top N + 弱势股 Bottom N，按技术评分排序
+    """
+    logger.info(f"🔍 全市场扫描: Top/Bottom {top_n}")
+    server_stats["scans_completed"] += 1
+
+    # 1. 获取全市场实时数据
+    df = market_data._get_spot_cache()
+    if df.empty or "代码" not in df.columns:
+        return {"error": "全市场数据获取失败，请稍后重试"}
+
+    # 过滤：排除 ST、停牌、新股（上市不足20天用涨跌幅判断）
+    filtered = df.copy()
+    if "名称" in filtered.columns:
+        filtered = filtered[~filtered["名称"].str.contains("ST|退", na=False)]
+    if "最新价" in filtered.columns:
+        filtered = filtered[filtered["最新价"] > 0]  # 排除停牌
+    if "涨跌幅" in filtered.columns:
+        filtered = filtered[filtered["涨跌幅"].abs() < 20]  # 排除涨跌停（可能数据异常）
+
+    if filtered.empty:
+        return {"error": "过滤后无有效数据"}
+
+    # 2. 初筛：涨幅 Top 30 + 跌幅 Bottom 30
+    by_pct = filtered.sort_values("涨跌幅", ascending=False)
+    candidates_bull = by_pct.head(30)
+    candidates_bear = by_pct.tail(30)
+
+    # 3. 对候选股跑技术分析评分
+    def _score_stock(code):
+        try:
+            daily = market_data.get_stock_daily(str(code), days=60)
+            if daily.empty or len(daily) < 20:
+                return None
+            tech_result = technical.analyze(daily)
+            if "error" in tech_result:
+                return None
+            return {
+                "code": str(code),
+                "name": str(filtered[filtered["代码"] == code]["名称"].iloc[0]) if not filtered[filtered["代码"] == code].empty else str(code),
+                "price": float(by_pct[by_pct["代码"] == code]["最新价"].iloc[0]) if not by_pct[by_pct["代码"] == code].empty else 0,
+                "pct_today": float(by_pct[by_pct["代码"] == code]["涨跌幅"].iloc[0]) if not by_pct[by_pct["代码"] == code].empty else 0,
+                "score": tech_result["trend"]["score"],
+                "signal": tech_result["trend"]["signal"],
+                "volume_ratio": tech_result["volume"]["volume_ratio"],
+                "rsi": tech_result["momentum"]["rsi_14"],
+                "patterns": tech_result["patterns"],
+                "reasons_bull": tech_result["trend"]["reasons_bull"][:3],
+                "reasons_bear": tech_result["trend"]["reasons_bear"][:3],
+            }
+        except Exception as e:
+            logger.debug(f"扫描 {code} 失败: {e}")
+            return None
+
+    # 强势候选
+    bull_results = []
+    for code in candidates_bull["代码"].values:
+        result = _score_stock(code)
+        if result:
+            bull_results.append(result)
+        if len(bull_results) >= top_n * 2:  # 多跑一些以备排序
+            break
+
+    # 弱势候选
+    bear_results = []
+    for code in candidates_bear["代码"].values:
+        result = _score_stock(code)
+        if result:
+            bear_results.append(result)
+        if len(bear_results) >= top_n * 2:
+            break
+
+    # 4. 按评分排序
+    bull_results.sort(key=lambda x: x["score"], reverse=True)
+    bear_results.sort(key=lambda x: x["score"])
+
+    return {
+        "strongest": bull_results[:top_n],
+        "weakest": bear_results[:top_n],
+        "total_scanned": len(filtered),
         "timestamp": datetime.now().isoformat(),
     }
 

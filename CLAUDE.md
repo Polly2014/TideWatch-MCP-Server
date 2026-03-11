@@ -28,7 +28,8 @@ TideWatch/
 │       ├── technical.py    # 技术分析引擎
 │       ├── regime.py       # 市场体制识别
 │       ├── narrative.py    # 叙事式分析报告生成
-│       └── tracker.py      # 🆕 信号追踪系统 (SQLite)
+│       ├── tracker.py      # 信号追踪系统 (SQLite)
+│       └── guardrails.py   # 🆕 行为护栏 (Anti-FOMO)
 └── data/                   # 运行时数据 (git-ignored)
     └── signals.db          # 信号追踪数据库
 ```
@@ -46,7 +47,8 @@ TideWatch/
 | `get_stock_news_report` | 个股新闻消息面 |
 | `get_north_flow_report` | 北向资金分析 |
 | `review_signals` | 🆕 查看历史信号和胜率统计 |
-| `update_signal_outcomes` | 🆕 回填历史信号实际走势 |
+| `update_signal_outcomes` | 回填历史信号实际走势 |
+| `scan_market` | 🆕 全市场扫描强弱股 Top/Bottom N |
 | `server_status` | 服务器状态 |
 
 ## Design Principles
@@ -66,10 +68,10 @@ TideWatch/
 - [x] 叙事式分析报告（形态驱动开场 + 多空博弈 + 有立场结论）
 - [x] 代理兼容（NO_PROXY + 失败冷却60s + 日K线fallback）
 
-### Phase 2: 引擎增强
-- [x] 信号追踪系统（SQLite，每次分析自动记录，5/10/20日胜率回填）(2026-03-12)
-- [ ] 行为护栏 v1（追高检测 / 分析频次提醒 / 连续看空检测）
-- [ ] scan_market 工具（全市场扫描 Top/Bottom 10 强弱股）
+### Phase 2: ✅ 引擎增强 (2026-03-12)
+- [x] 信号追踪系统（SQLite，每次分析自动记录，5/10/20日胜率回填）
+- [x] 行为护栏 v1（追高检测 / 分析频次提醒 / 连续看空检测）
+- [x] scan_market 工具（全市场扫描 Top/Bottom N 强弱股）
 
 ### Phase 3: 深度进化
 - [ ] 产业链图谱 v1（新能源/AI/消费核心链硬编码）
