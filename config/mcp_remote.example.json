@@ -1,4 +1,6 @@
 {
+    "_comment_vscode": "VS Code: paste into Settings → MCP → mcp.json → servers",
+    "_comment_cursor": "Cursor: paste into .cursor/mcp.json → mcpServers",
     "TideWatch-Remote": {
         "url": "https://tidewatch.polly.wang/mcp",
         "headers": {
