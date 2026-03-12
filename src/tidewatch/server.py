@@ -67,10 +67,10 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 config_path = PROJECT_ROOT / "config.env"
 if config_path.exists():
     load_dotenv(config_path)
-# 也加载 .env（如果存在，用于雪球 token 等额外配置）
+# 也加载 .env（优先级更高，可覆盖 config.env 的值）
 env_path = PROJECT_ROOT / ".env"
 if env_path.exists():
-    load_dotenv(env_path, override=False)
+    load_dotenv(env_path, override=True)
 
 # AKShare 通过东方财富 API 获取数据，代理会导致连接超时
 # VS Code 可能注入代理变量，macOS 还有系统级代理
