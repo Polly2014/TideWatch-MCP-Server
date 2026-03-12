@@ -198,8 +198,12 @@ async def analyze_stock(
     if "error" in tech:
         return tech
 
-    # 股票名称（优先 HOT_NAMES，fallback 到代码）
-    stock_name = HOT_NAMES.get(symbol) or market_data.get_stock_name(symbol)
+    # 股票名称（持仓/自选 → HOT_NAMES → get_stock_name）
+    _holdings = get_holdings()
+    _wl = get_watchlist()
+    _h_name = next((h.get("name", "") for h in _holdings if h["symbol"] == symbol), "")
+    _w_name = next((w.get("name", "") for w in _wl if w["symbol"] == symbol), "")
+    stock_name = _h_name or _w_name or HOT_NAMES.get(symbol) or market_data.get_stock_name(symbol)
 
     # 实时行情 fallback 到日K线最后一条
     try:
