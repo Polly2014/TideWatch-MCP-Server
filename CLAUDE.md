@@ -44,7 +44,7 @@ TideWatch-MCP-Server/
     └── signals.db          # 信号追踪数据库
 ```
 
-注意：Phase 3 已完成 LLM 叙事润色。产业链图谱和雪球数据源等积累足够信号数据后再开工。
+注意：Phase 3 已完成 LLM 叙事润色 + 三级股票池 + 持仓自选管理。产业链图谱和雪球数据源等积累足够信号数据后再开工。Dashboard 本地维护（`static/tidewatch.html`），不走 git push。
 
 ## MCP Tools
 
@@ -56,6 +56,7 @@ TideWatch-MCP-Server/
 | `get_money_flow_detail` | 资金流向详细分析 |
 | `get_stock_news_report` | 个股新闻消息面 |
 | `get_north_flow_report` | 北向资金分析 |
+| `polish_narrative_llm` | LLM 叙事润色（配合 skip_llm 渐进加载用）|
 | `review_signals` | 查看历史信号和胜率统计 |
 | `update_signal_outcomes` | 回填历史信号实际走势 |
 | `scan_market` | 三级股票池扫描（持仓+自选+热饰70只，并发K线+技术评分）5min缓存 |
@@ -95,11 +96,17 @@ TideWatch-MCP-Server/
 ### Phase 4: 触达层
 - [x] Azure VM 远程部署代码准备（FastMCP HTTP 双模式 + API Key 认证 + Nginx + systemd）(2026-03-12)
 - [x] Azure VM 实际部署（`tidewatch.polly.wang/mcp`，Cloudflare DNS + Let's Encrypt SSL）(2026-03-12)
-- [ ] Web Dashboard — 单 HTML 文件放 `static/tidewatch.html`，参考 chat_observatory.html 模式：
-  - 前端直接 fetch MCP JSON-RPC（`mcpCall('scan_market')` 等），不需要额外 REST 端点
-  - 持仓（浮盈/浮亏）+ 自选 + 热门三级展示
-  - 点击个股 → 调 `analyze_stock` 展示详情 + 冲突检测 + 叙事
-  - 顶部：持仓总浮盈 | 看多/看空比 | 市场体制 | 信号胜率
+- [x] Web Dashboard 主体 — `static/tidewatch.html` 本地维护 (2026-03-13):
+  - 前端直接 fetch MCP JSON-RPC（`mcpCall('scan_market')` 等）
+  - 持仓（浮盈/浮亏 + 买入价/数量 meta）+ 自选 + 热门三级展示
+  - 顶部：市场体制 regime badge | 持仓总浮盈 | 看多/看空比
+  - Skeleton + localStorage Cache (24h) + Split-Phase Init + Fade 过渡
+  - Sparkline 7日趋势（无数据灰色 `---` 占位）
+  - 冲突检测高亮（Apple 柔光 box-shadow + 7px 琥珀脉冲点 `::after`）
+  - Hover 交互（Score legend / section tints / card 悬浮阴影）
+  - 小龙虾 Review: 9.5/10 + 9/10 两轮
+- [ ] Web Dashboard — 个股详情面板（点击 → `analyze_stock` → 叙事 + 冲突检测 + 信号追踪）
+- [ ] 移动端适配（tooltip → click popover，当前桌面端优先）
 - [ ] 实时推送（自选股监控 + 信号变化通知）
 
 ## Deployment

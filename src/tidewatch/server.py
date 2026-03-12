@@ -150,6 +150,7 @@ async def analyze_stock(
     include_news: bool = True,
     include_money_flow: bool = True,
     days: int = 120,
+    skip_llm: bool = False,
 ):
     """
     个股综合分析 — 技术面 + 资金面 + 消息面 + 市场体制
@@ -163,6 +164,7 @@ async def analyze_stock(
         include_news: 是否包含新闻消息面分析
         include_money_flow: 是否包含资金流向
         days: K线天数（默认120个交易日）
+        skip_llm: 跳过 LLM 叙事润色（Dashboard 快速模式用，先返回模板叙事）
 
     Returns:
         综合分析报告，包含技术面、资金面、消息面、市场体制、冲突检测
@@ -270,12 +272,13 @@ async def analyze_stock(
     }
 
     # 9. LLM 叙事润色（可选，失败时保留模板叙事）
-    try:
-        report["narrative"] = polish_narrative(
-            report["narrative"], stock_name, adjusted_score
-        )
-    except Exception as e:
-        logger.debug(f"LLM 润色跳过: {e}")
+    if not skip_llm:
+        try:
+            report["narrative"] = polish_narrative(
+                report["narrative"], stock_name, adjusted_score
+            )
+        except Exception as e:
+            logger.debug(f"LLM 润色跳过: {e}")
 
     # 10. 行为护栏检测
     try:
@@ -309,6 +312,34 @@ async def analyze_stock(
         logger.warning(f"信号记录失败: {e}")
 
     return report
+
+
+@mcp.tool()
+async def polish_narrative_llm(
+    template_narrative: str,
+    stock_name: str,
+    score: int,
+):
+    """
+    LLM 叙事润色 — 将模板叙事润色为自然的分析师语气
+
+    配合 analyze_stock(skip_llm=True) 使用，实现渐进式加载：
+    先用模板叙事秒出结果，再异步调用此工具润色。
+
+    Args:
+        template_narrative: analyze_stock 返回的模板叙事文本
+        stock_name: 股票名称
+        score: 综合评分（adjusted_score）
+
+    Returns:
+        润色后的叙事文本
+    """
+    try:
+        polished = polish_narrative(template_narrative, stock_name, score)
+        return {"narrative": polished}
+    except Exception as e:
+        logger.warning(f"LLM 润色失败: {e}")
+        return {"narrative": template_narrative}
 
 
 @mcp.tool()
