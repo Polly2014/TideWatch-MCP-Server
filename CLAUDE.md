@@ -89,7 +89,7 @@ TideWatch-MCP-Server/
 
 ### Phase 4: 触达层
 - [x] Azure VM 远程部署代码准备（FastMCP HTTP 双模式 + API Key 认证 + Nginx + systemd）(2026-03-12)
-- [ ] Azure VM 实际部署（`tidewatch.polly.wang/mcp`，Cloudflare DNS + Let's Encrypt SSL）
+- [x] Azure VM 实际部署（`tidewatch.polly.wang/mcp`，Cloudflare DNS + Let's Encrypt SSL）(2026-03-12)
 - [ ] Web Dashboard（Next.js 前端 + REST API）
 - [ ] 实时推送（自选股监控 + 信号变化通知）
 
