@@ -23,7 +23,14 @@ def _bs_login():
     """确保 baostock 已登录（全局单连接）"""
     global _bs_logged_in
     if not _bs_logged_in:
-        lg = bs.login()
+        import io, sys
+        # baostock login() prints to stdout, suppress it
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            lg = bs.login()
+        finally:
+            sys.stdout = old_stdout
         if lg.error_code == "0":
             _bs_logged_in = True
             logger.info("baostock 登录成功")
@@ -116,6 +123,9 @@ class MarketData:
             rows = []
             while (rs.error_code == "0") and rs.next():
                 rows.append(rs.get_row_data())
+
+            if not rows:
+                logger.debug(f"baostock {symbol} 返回 0 rows (error={rs.error_code} msg={rs.error_msg})")
 
             if rows:
                 df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume", "pct_change"])
