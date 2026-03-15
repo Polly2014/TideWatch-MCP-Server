@@ -335,11 +335,7 @@ async def analyze_stock(
 
 def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm):
     t0 = _time.monotonic()
-
-    # 等待预热完成（最多等 120秒，避免资源竞争）
-    if not _warmup_done.is_set():
-        logger.info(f"⏳ {symbol} 等待预热完成...")
-        _warmup_done.wait(timeout=120)
+    # baostock 每次查询都 auto-reconnect，无需等预热
 
     # ETF 检测（纯前缀判断，无网络请求）
     is_etf = market_data._is_etf(symbol)
