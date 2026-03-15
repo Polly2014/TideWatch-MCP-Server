@@ -41,6 +41,7 @@ def polish_narrative(
     stock_name: str,
     score: int,
     model: str = "",
+    portfolio_context: str = "",
 ) -> str:
     """
     用 LLM 润色模板叙事
@@ -50,6 +51,7 @@ def polish_narrative(
         stock_name: 股票名称
         score: 综合评分
         model: LLM 模型（默认从环境变量读取）
+        portfolio_context: 用户持仓上下文（如 "用户持仓: 4600股，成本¥8.75，浮盈+20.1%"）
 
     Returns:
         润色后的叙事文本（失败时返回原文）
@@ -60,6 +62,13 @@ def polish_narrative(
 
     model = model or os.getenv("COPILOTX_MODEL", "claude-sonnet-4")
 
+    portfolio_section = ""
+    if portfolio_context:
+        portfolio_section = f"""
+用户持仓情况：{portfolio_context}
+请结合用户的持仓状况给出个性化建议（如：持仓成本、浮盈浮亏幅度、是否应该止盈/止损/加仓/减仓/观望）。
+"""
+
     prompt = f"""你是一位经验丰富的A股分析师，正在和朋友聊投资。
 请将以下分析报告润色为更自然、更有"聊天感"的短评。
 
@@ -67,12 +76,13 @@ def polish_narrative(
 - 保持所有数据和结论不变（评分、方向、价位等）
 - 语气要像在微信群里给朋友分享观点，不要太正式
 - 如果有矛盾信号或警告，要突出强调
-- 控制在 200 字以内
+- 如果有用户持仓信息，结合持仓成本和浮盈做出具体的操作建议
+- 控制在 250 字以内
 - 不要加任何标题或格式标记，纯文本即可
 
 股票：{stock_name}
 综合评分：{score:+d}
-
+{portfolio_section}
 原始分析：
 {template_narrative}"""
 

@@ -431,6 +431,26 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
 
     server_stats["analyses_completed"] += 1
 
+    # 构建持仓上下文（供 LLM 个性化分析）
+    _holding = next((h for h in _holdings if h["symbol"] == symbol), None)
+    _watching = next((w for w in _wl if w["symbol"] == symbol), None)
+    portfolio_ctx = ""
+    if _holding:
+        cost = _holding.get("cost", 0)
+        shares = _holding.get("shares", 0)
+        price = realtime.get("price", 0)
+        if cost and cost > 0 and shares > 0:
+            pnl_pct = round((price - cost) / cost * 100, 2)
+            pnl_amt = round((price - cost) * shares, 0)
+            portfolio_ctx = f"用户持仓: {shares}股，成本价¥{cost:.2f}，当前浮{'\u76c8' if pnl_pct >= 0 else '\u4e8f'}{abs(pnl_pct):.1f}%（{'+'if pnl_amt>=0 else ''}{pnl_amt:.0f}元）"
+        else:
+            portfolio_ctx = f"用户持仓: {shares}股"
+    elif _watching:
+        reason = _watching.get("reason", "")
+        portfolio_ctx = f"用户已加入自选股" + (f"，关注原因: {reason}" if reason else "")
+    else:
+        portfolio_ctx = "用户未持仓，仅在浏览"
+
     report = {
         "stock": {
             "code": symbol,
@@ -458,6 +478,7 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
             "stop_loss_hint": f"ATR止损建议: 价格 - {tech['volatility']['atr_14'] * regime_adj['stop_loss_multiplier']:.2f}",
         },
         "narrative": narrator.generate(stock_name, tech, regime_result, money, conflicts, final_signal),
+        "portfolio_context": portfolio_ctx,
         "timestamp": _now_bj().isoformat(),
     }
 
@@ -465,7 +486,8 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     if not skip_llm:
         try:
             report["narrative"] = polish_narrative(
-                report["narrative"], stock_name, adjusted_score
+                report["narrative"], stock_name, adjusted_score,
+                portfolio_context=portfolio_ctx,
             )
         except Exception as e:
             logger.debug(f"LLM 润色跳过: {e}")
@@ -512,6 +534,7 @@ async def polish_narrative_llm(
     template_narrative: str,
     stock_name: str,
     score: int,
+    portfolio_context: str = "",
 ):
     """
     LLM 叙事润色 — 将模板叙事润色为自然的分析师语气
@@ -523,12 +546,13 @@ async def polish_narrative_llm(
         template_narrative: analyze_stock 返回的模板叙事文本
         stock_name: 股票名称
         score: 综合评分（adjusted_score）
+        portfolio_context: 用户持仓上下文（如 "用户持仓: 4600股，成本¥8.75，浮盈+20.1%"）
 
     Returns:
         润色后的叙事文本
     """
     try:
-        polished = polish_narrative(template_narrative, stock_name, score)
+        polished = polish_narrative(template_narrative, stock_name, score, portfolio_context=portfolio_context)
         return {"narrative": polished}
     except Exception as e:
         logger.warning(f"LLM 润色失败: {e}")
