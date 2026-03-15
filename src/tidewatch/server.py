@@ -145,14 +145,18 @@ def _is_market_hours():
 def _warmup_loop():
     """后台线程：启动预热 + 盘中定时刷新 scan_market 缓存"""
     _time.sleep(3)  # 等服务就绪
-    logger.info("🔥 后台预热: 首次 scan_market 开始...")
-    try:
-        _run_scan_warmup()
-        logger.info("🔥 后台预热: 首次 scan_market 完成，缓存已就绪")
-    except Exception as e:
-        logger.error(f"🔥 后台预热失败: {e}")
-    finally:
-        _warmup_done.set()  # 无论成功失败都标记完成
+
+    # 非交易时段跳过首次预热（凌晨东方财富服务器维护，容易断连）
+    if _is_market_hours() or (915 <= _now_bj().hour * 100 + _now_bj().minute <= 2100 and _now_bj().weekday() < 5):
+        logger.info("🔥 后台预热: 首次 scan_market 开始...")
+        try:
+            _run_scan_warmup()
+            logger.info("🔥 后台预热: 首次 scan_market 完成，缓存已就绪")
+        except Exception as e:
+            logger.error(f"🔥 后台预热失败: {e}")
+    else:
+        logger.info("🔥 非交易时段，跳过首次预热")
+    _warmup_done.set()  # 无论成功失败都标记完成
 
     # 定时刷新循环
     while True:
@@ -219,10 +223,10 @@ def _run_scan_warmup():
     results = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         future_to_sym = {executor.submit(_score_one, sym): sym for sym in all_symbols}
-        for future in concurrent.futures.as_completed(future_to_sym):
+        for future in concurrent.futures.as_completed(future_to_sym, timeout=120):
             sym = future_to_sym[future]
             try:
-                r = future.result()
+                r = future.result(timeout=10)
                 if r:
                     results[sym] = r
             except Exception:
