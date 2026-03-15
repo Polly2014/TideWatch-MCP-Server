@@ -146,8 +146,9 @@ def _warmup_loop():
     """后台线程：启动预热 + 盘中定时刷新 scan_market 缓存"""
     _time.sleep(3)  # 等服务就绪
 
-    # 非交易时段跳过首次预热（凌晨东方财富服务器维护，容易断连）
-    if _is_market_hours() or (915 <= _now_bj().hour * 100 + _now_bj().minute <= 2100 and _now_bj().weekday() < 5):
+    # 只在凌晨 0-7 点（东方财富维护窗口）跳过预热，其他时间都执行
+    bj_hour = _now_bj().hour
+    if bj_hour >= 7:  # 北京时间 7:00 后都可以预热（包括周末）
         logger.info("🔥 后台预热: 首次 scan_market 开始...")
         try:
             _run_scan_warmup()
@@ -155,7 +156,7 @@ def _warmup_loop():
         except Exception as e:
             logger.error(f"🔥 后台预热失败: {e}")
     else:
-        logger.info("🔥 非交易时段，跳过首次预热")
+        logger.info(f"🔥 凌晨 {bj_hour}:xx，跳过首次预热（AKShare 维护窗口）")
     _warmup_done.set()  # 无论成功失败都标记完成
 
     # 定时刷新循环
