@@ -981,6 +981,12 @@ async def scan_market(top_n: int = 10):
             "hot_weakest": sorted(hot_all[-top_n:], key=lambda x: x["score"]) if len(hot_all) > top_n else [],
         }
 
+    # 阻塞扫描放到线程池，不卡事件循环（baostock 单连接 + _bs_lock 会阻塞）
+    return await asyncio.to_thread(_scan_market_sync, top_n)
+
+
+def _scan_market_sync(top_n: int):
+    """scan_market 的同步实现，在线程池中执行"""
     pool = get_scan_pool()
     holdings_info = {h["symbol"]: h for h in get_holdings()}
 
