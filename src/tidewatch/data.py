@@ -21,24 +21,87 @@ _bs_lock = threading.Lock()
 _bs_logged_in = False
 _bs_login_time = 0
 _BS_SESSION_TTL = 30  # 每 30 秒重新登录保持连接新鲜
+_BS_SOCKET_TIMEOUT = 10  # baostock socket 超时（秒），防止僵尸 TCP 卡死进程
+
+
+def _force_close_bs_socket():
+    """强制关闭 baostock 内部 socket + 标记 session 失效，打断僵尸 TCP 连接"""
+    global _bs_logged_in
+    _bs_logged_in = False
+    try:
+        import baostock.common.context as bs_ctx
+        if hasattr(bs_ctx, "default_socket"):
+            old_sock = getattr(bs_ctx, "default_socket")
+            if old_sock is not None:
+                try:
+                    old_sock.close()
+                except Exception:
+                    pass
+                setattr(bs_ctx, "default_socket", None)
+    except Exception:
+        pass
+
+
+def _patch_bs_socket_timeout():
+    """给 baostock 内部 socket 注入超时，防止 recv/send 永久阻塞"""
+    try:
+        import baostock.common.context as bs_ctx
+        if hasattr(bs_ctx, "default_socket"):
+            sock = getattr(bs_ctx, "default_socket")
+            if sock is not None:
+                sock.settimeout(_BS_SOCKET_TIMEOUT)
+    except Exception:
+        pass
+
+
+# Monkey-patch baostock SocketUtil.connect — 给新建 socket 自动设超时
+try:
+    import baostock.util.socketutil as _bs_sockutil
+    import baostock.common.context as _bs_context
+    import baostock.common.contants as _bs_cons
+    import socket as _socket
+
+    _orig_su_connect = _bs_sockutil.SocketUtil.connect
+
+    def _connect_with_timeout(self):
+        """baostock connect with socket timeout (防僵尸 TCP)"""
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        sock.settimeout(_BS_SOCKET_TIMEOUT)
+        try:
+            sock.connect((_bs_cons.BAOSTOCK_SERVER_IP, _bs_cons.BAOSTOCK_SERVER_PORT))
+        except Exception:
+            sock.close()  # 防 socket 泄漏
+            logger.error("baostock socket connect 超时或失败")
+            raise
+        setattr(_bs_context, "default_socket", sock)
+
+    _bs_sockutil.SocketUtil.connect = _connect_with_timeout
+    logger.info("baostock SocketUtil.connect 已注入 %ds 超时保护", _BS_SOCKET_TIMEOUT)
+except Exception as e:
+    logger.warning(f"baostock monkey-patch 失败（不影响功能，但无超时保护）: {e}")
 
 
 def _bs_login():
-    """确保 baostock 已登录（超过 30s 自动重连）"""
+    """确保 baostock 已登录（超过 30s 自动重连，带 socket 超时保护）"""
     global _bs_logged_in, _bs_login_time
     now = time.time()
     if _bs_logged_in and (now - _bs_login_time) < _BS_SESSION_TTL:
         return  # 连接还新鲜
 
+    # 强制关闭旧 socket + 标记 session 失效（打断可能的僵尸 TCP 连接）
+    _force_close_bs_socket()
+
     import io, sys
     old_stdout = sys.stdout
     sys.stdout = io.StringIO()
     try:
-        if _bs_logged_in:
-            bs.logout()
         lg = bs.login()
     finally:
         sys.stdout = old_stdout
+
+    # 登录后确保 socket 有超时（双保险：connect 已设，这里再设一次）
+    _patch_bs_socket_timeout()
+
     if lg.error_code == "0":
         _bs_logged_in = True
         _bs_login_time = now
@@ -113,7 +176,9 @@ class MarketData:
         """
         # 优先用 baostock（快、无反爬），线程锁保护单连接
         try:
-            with _bs_lock:
+            if not _bs_lock.acquire(timeout=15):
+                raise TimeoutError("baostock lock acquire timeout")
+            try:
                 _bs_login()
                 bs_code = _to_bs_code(symbol)
                 start = (datetime.now() - timedelta(days=days * 2)).strftime("%Y-%m-%d")
@@ -132,6 +197,8 @@ class MarketData:
                 rows = []
                 while (rs.error_code == "0") and rs.next():
                     rows.append(rs.get_row_data())
+            finally:
+                _bs_lock.release()
 
             if not rows:
                 logger.debug(f"baostock {symbol}: 0 rows (可能停牌/退市)")
@@ -145,6 +212,7 @@ class MarketData:
                 return df
         except Exception as e:
             logger.warning(f"baostock {symbol} 异常: {e}")
+            _force_close_bs_socket()
 
         # AKShare fallback（仅在 baostock 完全不可用时才尝试，如 ETF 特殊代码）
         if self._is_etf(symbol):
@@ -288,7 +356,9 @@ class MarketData:
         """
         # baostock（线程锁保护单连接）
         try:
-            with _bs_lock:
+            if not _bs_lock.acquire(timeout=15):
+                raise TimeoutError("baostock lock acquire timeout")
+            try:
                 _bs_login()
                 bs_code = _to_bs_code(index_code)
                 start = (datetime.now() - timedelta(days=days * 2)).strftime("%Y-%m-%d")
@@ -300,6 +370,8 @@ class MarketData:
                 rows = []
                 while (rs.error_code == "0") and rs.next():
                     rows.append(rs.get_row_data())
+            finally:
+                _bs_lock.release()
             if rows:
                 df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume", "pct_change"])
                 for col in ["open", "high", "low", "close", "volume", "pct_change"]:
@@ -308,6 +380,7 @@ class MarketData:
                 return df.tail(days).reset_index(drop=True)
         except Exception as e:
             logger.warning(f"baostock 指数 {index_code} 失败, fallback AKShare: {e}")
+            _force_close_bs_socket()
 
         # AKShare fallback
         try:
