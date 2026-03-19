@@ -861,7 +861,7 @@ async def update_signal_outcomes():
     Returns:
         回填统计（更新了多少条 5d/10d/20d 记录）
     """
-    result = update_outcomes(market_data)
+    result = await asyncio.to_thread(update_outcomes, market_data)
     return {
         "updated": result,
         "message": f"回填完成: 5日={result['5d']}条, 10日={result['10d']}条, 20日={result['20d']}条",

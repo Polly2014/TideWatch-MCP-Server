@@ -209,7 +209,8 @@ def update_outcomes(market_data) -> dict[str, Any]:
     try:
         # 获取所有有待回填的信号
         pending = conn.execute(
-            """SELECT id, symbol, timestamp, score, direction, price_at_signal
+            """SELECT id, symbol, timestamp, score, direction, price_at_signal,
+                      price_5d, price_10d, price_20d
                FROM signals 
                WHERE price_5d IS NULL OR price_10d IS NULL OR price_20d IS NULL
                ORDER BY timestamp ASC"""
