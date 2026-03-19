@@ -803,7 +803,7 @@ async def server_status():
 
 
 @mcp.tool()
-async def review_signals(days: int = 30, symbol: str = ""):
+async def review_signals(days: int = 30, symbol: str = "", limit: int = 200):
     """
     查看历史信号和胜率统计 — 观潮的自省系统
 
@@ -813,6 +813,7 @@ async def review_signals(days: int = 30, symbol: str = ""):
     Args:
         days: 查看天数（默认30天）
         symbol: 可选，指定股票代码只看该票
+        limit: 最多返回信号条数（默认200）
 
     Returns:
         信号列表 + 胜率统计
@@ -822,7 +823,7 @@ async def review_signals(days: int = 30, symbol: str = ""):
 
     # 简化信号列表（只保留关键字段）
     signals_summary = []
-    for s in recent[:50]:  # 最多50条
+    for s in recent[:limit]:
         entry = {
             "id": s["id"],
             "date": s["timestamp"][:10],
