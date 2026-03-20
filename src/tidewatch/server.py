@@ -476,11 +476,10 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     else:
         portfolio_ctx = "用户未持仓，仅在浏览"
 
-    # 追加可用资金上下文
+    # 追加可用资金上下文（仅 A 股，美股账户是人民币无参考价值）
     _acct = get_account_info()
-    if _acct["cash"] > 0:
-        _cur = "$" if _is_us else "¥"
-        portfolio_ctx += f"\n账户可用资金: {_cur}{_acct['cash']:,.2f}，总资产: {_cur}{_acct['total_assets']:,.2f}"
+    if _acct["cash"] > 0 and not _is_us:
+        portfolio_ctx += f"\n账户可用资金: ¥{_acct['cash']:,.2f}，总资产: ¥{_acct['total_assets']:,.2f}"
 
     report = {
         "stock": {
