@@ -532,7 +532,7 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
             f"方向: {final_signal} | 综合评分: {adjusted_score:+d} (原始{raw_score:+d}, 体制调整{regime_adj['signal_bias']:+d})",
             f"价格: {realtime['price']:.2f} | 5日涨跌: {_pos.get('pct_5d', 0):+.1f}% | 20日位置: {_pos.get('position_20d', 50):.0f}%",
             f"均线: {'多头排列' if _ma.get('bullish_aligned') else '空头排列' if _ma.get('bearish_aligned') else '交织'} | MA5偏离: {_ma.get('price_vs_ma5', 0):+.1f}% | MA20偏离: {_ma.get('price_vs_ma20', 0):+.1f}%",
-            f"动量: RSI {_mom.get('rsi_14', 50):.0f} | MACD {'金叉' if _mom.get('macd_cross') == 'golden' else '死叉' if _mom.get('macd_cross') == 'death' else '无交叉'}",
+            f"动量: RSI {_mom.get('rsi_14', 50):.0f} | MACD {_mom.get('macd_cross', '无')}",
             f"量能: 量比 {_vol.get('volume_ratio', 1):.1f}x | OBV斜率 {_vol.get('obv_slope', 0):.3f} | 换手率 {_vol.get('turn_rate', 0):.1f}% (5日均 {_vol.get('avg_turn_5d', 0):.1f}%)",
         ]
         if realtime.get("pe", 0) > 0:
