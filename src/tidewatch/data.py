@@ -263,7 +263,7 @@ class MarketData:
 
                 rs = bs.query_history_k_data_plus(
                     bs_code,
-                    "date,open,high,low,close,volume,pctChg",
+                    "date,open,high,low,close,volume,pctChg,turn,peTTM,pbMRQ",
                     start_date=start,
                     end_date=end,
                     frequency="d",
@@ -279,8 +279,8 @@ class MarketData:
                 logger.debug(f"baostock {symbol}: 0 rows (可能停牌/退市)")
 
             if rows:
-                df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume", "pct_change"])
-                for col in ["open", "high", "low", "close", "volume", "pct_change"]:
+                df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume", "pct_change", "turn", "pe_ttm", "pb_mrq"])
+                for col in ["open", "high", "low", "close", "volume", "pct_change", "turn", "pe_ttm", "pb_mrq"]:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.dropna(subset=["close"]).sort_values("date").tail(days).reset_index(drop=True)

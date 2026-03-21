@@ -401,12 +401,14 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     stock_name = _h_name or _w_name or HOT_NAMES.get(symbol) or market_data.get_stock_name(symbol)
 
     # 实时行情：直接用日K线最后一条（避免 stock_zh_a_spot_em 全市场爬取 60-90s）
-    # 盘中精度差异 <1%，盘后完全一致，性价比远优于实时接口
+    # PE/PB 也从 K 线取（baostock peTTM/pbMRQ，每日更新，零额外请求）
     last = df.iloc[-1]
+    pe_val = float(last.get("pe_ttm", 0)) if pd.notna(last.get("pe_ttm")) else 0
+    pb_val = float(last.get("pb_mrq", 0)) if pd.notna(last.get("pb_mrq")) else 0
     realtime = {
         "price": float(last["close"]),
         "pct_change": float(last.get("pct_change", 0)),
-        "pe": 0, "pb": 0, "total_mv": 0,
+        "pe": round(pe_val, 2), "pb": round(pb_val, 2), "total_mv": 0,
     }
 
     # 3. 市场体制（已并发拉取）

@@ -85,6 +85,10 @@ class TechnicalAnalyzer:
         # 量比
         volume_ratio = latest_vol / avg_vol_5 if avg_vol_5 > 0 else 0
 
+        # 换手率（baostock turn 字段，百分比）
+        turn_rate = float(df["turn"].iloc[-1]) if "turn" in df.columns and pd.notna(df["turn"].iloc[-1]) else 0
+        avg_turn_5 = float(df["turn"].rolling(5).mean().iloc[-1]) if "turn" in df.columns else 0
+
         # VWAP 近似 (当日不可用时用近5日均价)
         if "turnover" in df.columns and df["turnover"].iloc[-1] > 0:
             vwap = df["turnover"].iloc[-1] / df["volume"].iloc[-1] if df["volume"].iloc[-1] > 0 else close.iloc[-1]
@@ -101,6 +105,8 @@ class TechnicalAnalyzer:
             "price_vs_vwap": round((close.iloc[-1] / vwap - 1) * 100, 2),
             "shrinking": volume_ratio < 0.7,
             "expanding": volume_ratio > 1.5,
+            "turn_rate": round(turn_rate, 2),
+            "avg_turn_5d": round(avg_turn_5, 2),
         }
 
     def _calc_momentum(self, df: pd.DataFrame) -> dict:
@@ -374,6 +380,18 @@ class TechnicalAnalyzer:
                 reasons_bear.append(f"放量下跌(量比{vol['volume_ratio']:.1f}x)")
         elif vol["volume_ratio"] < 0.6:
             reasons_bear.append(f"极度缩量(量比{vol['volume_ratio']:.1f}x)")
+
+        # 换手率异常检测（与量比+OBV 三角交叉验证）
+        if vol["turn_rate"] > 0:
+            if vol["turn_rate"] > 8:  # 换手率>8% 异常活跃
+                if pos["pct_5d"] > 0:
+                    score += 5
+                    reasons_bull.append(f"高换手({vol['turn_rate']:.1f}%)放量上攻")
+                else:
+                    score -= 5
+                    reasons_bear.append(f"高换手({vol['turn_rate']:.1f}%)主力可能出货")
+            elif vol["turn_rate"] < 1 and vol["avg_turn_5d"] > 2:  # 换手率突降
+                reasons_bear.append(f"换手萧条({vol['turn_rate']:.1f}%←均{vol['avg_turn_5d']:.1f}%)")
 
         # ── 布林带位置 (±10) ──
         if boll["boll_position"] > 80:
