@@ -111,6 +111,38 @@ def _bs_login():
         logger.error(f"baostock 登录失败: {lg.error_msg}")
 
 
+def bs_heartbeat() -> bool:
+    """baostock 心跳检测 — 轻量 ping 沪深300，失败则强制重连。供后台定时调用。"""
+    try:
+        if not _bs_lock.acquire(timeout=10):
+            logger.warning("💓 baostock heartbeat: 获取锁超时")
+            return False
+        try:
+            _bs_login()
+            today = datetime.now().strftime("%Y-%m-%d")
+            rs = bs.query_history_k_data_plus(
+                "sh.000300", "close", start_date=today, frequency="d"
+            )
+            if rs.error_code != "0":
+                raise RuntimeError(f"query failed: {rs.error_msg}")
+            return True
+        finally:
+            _bs_lock.release()
+    except Exception as e:
+        logger.warning(f"💓 baostock heartbeat failed: {e}, force reconnect")
+        _force_close_bs_socket()
+        try:
+            if _bs_lock.acquire(timeout=10):
+                try:
+                    _bs_login()
+                    logger.info("💓 baostock heartbeat: 重连成功")
+                finally:
+                    _bs_lock.release()
+        except Exception as e2:
+            logger.error(f"💓 baostock heartbeat: 重连也失败: {e2}")
+        return False
+
+
 def _to_bs_code(symbol: str) -> str:
     """纯数字代码 → baostock 格式 (sz.002111 / sh.600519)"""
     if symbol.startswith(("6", "5")):

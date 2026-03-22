@@ -163,6 +163,15 @@ def _warmup_loop():
     # 定时刷新循环
     while True:
         _time.sleep(_SCAN_CACHE_TTL)  # 每 5 分钟检查一次
+
+        # 💓 baostock 心跳检测（每轮都做，不限盘中）
+        try:
+            from .data import bs_heartbeat
+            if not bs_heartbeat():
+                logger.warning("💓 baostock 心跳异常，已尝试重连")
+        except Exception as e:
+            logger.error(f"💓 baostock 心跳检测异常: {e}")
+
         if _is_market_hours():
             try:
                 logger.info("🔄 定时刷新: scan_market 缓存更新中...")
