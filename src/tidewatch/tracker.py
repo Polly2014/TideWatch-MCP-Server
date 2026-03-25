@@ -222,8 +222,8 @@ def update_outcomes(market_data) -> dict[str, Any]:
         if oldest_pending:
             oldest_date = datetime.fromisoformat(oldest_pending)
             cal_days = (_now_bj() - oldest_date).days
-            # 日历天 < 7 时不可能有 5 个交易日（考虑周末），快速返回
-            if cal_days < 7:
+            # 日历天 < 6 时不可能有 5 个交易日（最短：周一信号→下周一回填=7天，但周内信号可能 6 天就够）
+            if cal_days < 6:
                 return {
                     **updated,
                     "message": f"回填跳过: 最早待回填信号距今{cal_days}天，交易日不足5天，请工作日盘后再试",
