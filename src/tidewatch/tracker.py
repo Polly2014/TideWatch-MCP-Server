@@ -254,7 +254,8 @@ def update_outcomes(market_data) -> dict[str, Any]:
                 continue
 
             try:
-                df = market_data.get_stock_daily(symbol, days=days_elapsed + 5)
+                from .data import get_stock_daily_for_backfill
+                df = get_stock_daily_for_backfill(symbol, days=days_elapsed + 5)
                 if df.empty:
                     continue
 
@@ -306,6 +307,9 @@ def update_outcomes(market_data) -> dict[str, Any]:
             except Exception as e:
                 logger.warning(f"回填 {symbol} #{row['id']} 失败: {e}")
                 updated["errors"] += 1
+
+            import time as _time
+            _time.sleep(0.05)  # 让出 baostock 锁给 analyze_stock
 
         conn.commit()
         logger.info(f"📊 信号回填完成: 5d={updated['5d']}, 10d={updated['10d']}, 20d={updated['20d']}")

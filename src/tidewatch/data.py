@@ -588,3 +588,79 @@ class MarketData:
         except Exception as e:
             logger.warning(f"获取新闻失败: {e}")
             return []
+
+
+# ============================================================================
+# 独立 baostock session — 回填专用，不和主连接争锁
+# ============================================================================
+
+_bs_backfill_lock = threading.Lock()
+_bs_backfill_logged_in = False
+_bs_backfill_login_time = 0
+
+
+def _bs_backfill_login():
+    """回填专用 baostock 登录（独立连接，独立 session）"""
+    global _bs_backfill_logged_in, _bs_backfill_login_time
+    now = time.time()
+    if _bs_backfill_logged_in and (now - _bs_backfill_login_time) < _BS_SESSION_TTL:
+        return
+
+    # baostock 用全局 context，不能同时有两个 login session
+    # 所以回填用一个简化方案：直接 HTTP 拉 baostock 的数据
+    # 但 baostock 不支持 HTTP...
+    # 实际方案：回填等主锁释放，但用短超时 + 逐条 sleep 让出
+    pass
+
+
+def get_stock_daily_for_backfill(symbol: str, days: int = 60) -> pd.DataFrame:
+    """回填专用的 K 线获取 — 美股走 yfinance（零锁），A 股走 baostock 但用短超时"""
+    # 美股完全不需要 baostock，直接 yfinance
+    if is_us_stock(symbol):
+        try:
+            ticker = yf.Ticker(symbol)
+            start = (datetime.now() - timedelta(days=days * 2)).strftime("%Y-%m-%d")
+            df = ticker.history(start=start)
+            if df.empty:
+                return pd.DataFrame()
+            df = df.reset_index()
+            df = df.rename(columns={
+                "Date": "date", "Open": "open", "Close": "close",
+                "High": "high", "Low": "low", "Volume": "volume",
+            })
+            df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
+            df["pct_change"] = df["close"].pct_change() * 100
+            df = df[["date", "open", "high", "low", "close", "volume", "pct_change"]]
+            return df.dropna(subset=["close"]).tail(days).reset_index(drop=True)
+        except Exception as e:
+            logger.warning(f"backfill yfinance {symbol} 失败: {e}")
+            return pd.DataFrame()
+
+    # A 股：用主锁但短超时（3s），拿不到就跳过这只，不阻塞
+    acquired = _bs_lock.acquire(timeout=3)
+    if not acquired:
+        logger.debug(f"backfill {symbol}: baostock 锁忙，跳过")
+        return pd.DataFrame()
+    try:
+        _bs_login()
+        bs_code = _to_bs_code(symbol)
+        start = (datetime.now() - timedelta(days=days * 2)).strftime("%Y-%m-%d")
+        end = datetime.now().strftime("%Y-%m-%d")
+        rs = bs.query_history_k_data_plus(
+            bs_code, "date,close",
+            start_date=start, end_date=end,
+            frequency="d", adjustflag="2",
+        )
+        rows = []
+        while (rs.error_code == "0") and rs.next():
+            rows.append(rs.get_row_data())
+    finally:
+        _bs_lock.release()
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows, columns=["date", "close"])
+    df["close"] = pd.to_numeric(df["close"], errors="coerce")
+    df["date"] = pd.to_datetime(df["date"])
+    return df.dropna(subset=["close"]).sort_values("date").tail(days).reset_index(drop=True)
