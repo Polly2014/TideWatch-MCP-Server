@@ -249,8 +249,8 @@ def update_outcomes(market_data) -> dict[str, Any]:
             if price_at is None or price_at == 0:
                 continue
 
-            # 日历天不足 7 天的信号跳过（不可能有 5 个交易日）
-            if days_elapsed < 7 and row["price_5d"] is None:
+            # 日历天不足 6 天的信号跳过（不可能有 5 个交易日）
+            if days_elapsed < 6 and row["price_5d"] is None:
                 continue
 
             try:
