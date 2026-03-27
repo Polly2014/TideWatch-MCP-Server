@@ -131,6 +131,7 @@ server_stats = {
 _scan_cache = {"result": None, "time": 0}
 _SCAN_CACHE_TTL = 300  # 5分钟
 _warmup_done = threading.Event()  # 预热完成标志
+_scan_bg_refreshing = False  # 后台刷新中标志，防止并发刷新
 
 
 # ─── 后台预热 & 定时刷新 ─────────────────────────────────
@@ -1112,23 +1113,59 @@ async def scan_market(top_n: int = 10):
     Returns:
         持仓全部 + 自选全部 + 热门 Top/Bottom N，按评分排序
     """
+    global _scan_bg_refreshing
     logger.info(f"🔍 三级股票池扫描: Top/Bottom {top_n}")
     server_stats["scans_completed"] += 1
 
-    # 5分钟缓存：缓存完整结果，返回时按 top_n 切片
-    if _scan_cache["result"] and (_time.monotonic() - _scan_cache["time"]) < _SCAN_CACHE_TTL:
-        logger.info("⚙️ 使用扫描缓存（%ds内）", int(_SCAN_CACHE_TTL - (_time.monotonic() - _scan_cache["time"])))
-        cached = _scan_cache["result"]
-        # 按当前 top_n 重新切片热门池
-        hot_all = cached.get("_hot_sorted", [])
-        return {
-            **cached,
-            "hot_strongest": hot_all[:top_n],
-            "hot_weakest": sorted(hot_all[-top_n:], key=lambda x: x["score"]) if len(hot_all) > top_n else [],
-        }
+    cache_age = _time.monotonic() - _scan_cache["time"] if _scan_cache["result"] else float("inf")
 
-    # 阻塞扫描放到线程池，不卡事件循环（baostock 单连接 + _bs_lock 会阻塞）
+    # 1) 新鲜缓存（5分钟内）→ 直接返回
+    if _scan_cache["result"] and cache_age < _SCAN_CACHE_TTL:
+        logger.info("⚙️ 使用扫描缓存（%ds内）", int(_SCAN_CACHE_TTL - cache_age))
+        return _slice_scan_cache(top_n)
+
+    # 2) Stale-While-Revalidate: 有旧缓存 → 先返回旧数据，后台异步刷新
+    #    - 非盘中：数据不变，旧缓存完全有效，不触发刷新
+    #    - 盘中：返回旧缓存 + 后台刷新，下次请求拿到新数据
+    if _scan_cache["result"]:
+        if not _is_market_hours():
+            logger.info("⚙️ 非盘中，使用已有缓存（数据不变）")
+            return _slice_scan_cache(top_n)
+        # 盘中过期，先返回后台刷新
+        if not _scan_bg_refreshing:
+            _scan_bg_refreshing = True
+            logger.info("♻️ 返回过期缓存（%ds前），后台刷新中...", int(cache_age))
+            asyncio.get_event_loop().run_in_executor(None, _bg_refresh_scan)
+        else:
+            logger.info("♻️ 返回过期缓存（%ds前），后台刷新已在进行", int(cache_age))
+        return _slice_scan_cache(top_n)
+
+    # 3) 完全无缓存 → 阻塞扫描（首次冷启动）
+    logger.info("🔍 无缓存，执行全量扫描...")
     return await asyncio.to_thread(_scan_market_sync, top_n)
+
+
+def _slice_scan_cache(top_n: int):
+    """从缓存中按 top_n 切片返回"""
+    cached = _scan_cache["result"]
+    hot_all = cached.get("_hot_sorted", [])
+    return {
+        **cached,
+        "hot_strongest": hot_all[:top_n],
+        "hot_weakest": sorted(hot_all[-top_n:], key=lambda x: x["score"]) if len(hot_all) > top_n else [],
+    }
+
+
+def _bg_refresh_scan():
+    """后台刷新 scan_market 缓存（在线程池中执行）"""
+    global _scan_bg_refreshing
+    try:
+        _run_scan_warmup()
+        logger.info("♻️ 后台刷新完成，缓存已更新")
+    except Exception as e:
+        logger.error(f"♻️ 后台刷新失败: {e}")
+    finally:
+        _scan_bg_refreshing = False
 
 
 def _scan_market_sync(top_n: int):
