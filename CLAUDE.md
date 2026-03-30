@@ -80,6 +80,20 @@ ssh -F ssh.config Azure-Server "sqlite3 ~/GitHub_Workspace/TideWatch-MCP-Server/
 2. **冲突检测** — "技术面看多但主力在出货"这种矛盾才是真金
 3. **体制感知** — 横盘市里看什么都是观望，牛市里回调就是机会
 4. **MCP-Native** — 在 Claude/Cursor 中直接使用，UI 只是引擎的皮肤
+5. **数据驱动进化** — 每次策略调整必须有回填数据支撑，详见 [策略进化日志](docs/strategy-evolution.md)
+
+### 信号阈值 (v2, 2026-03-30)
+
+基于 52 条回填数据调整，详细分析见 [docs/strategy-evolution.md](docs/strategy-evolution.md)：
+
+| 评分 | 信号 | 备注 |
+|------|------|------|
+| ≥ +50 | 看多 | v2 提高门槛（v1 是 +25），回填 [+50,+75) 100% 正确 |
+| +25 ~ +50 | 偏多 / 中性 | bear/mild_bear 体制下强制中性（回填 0/4 全错） |
+| +8 ~ +25 | 偏多 | |
+| -8 ~ +8 | 中性观望 | |
+| -25 ~ -8 | 偏空 | |
+| ≤ -25 | 看空 | 81.6% 胜率，不调整 |
 
 ## Roadmap
 
@@ -249,3 +263,5 @@ tidewatch.polly.wang:443 (Nginx + Let's Encrypt SSL)
 - Dashboard 自动刷新仅在盘中 + 可见标签 + 无详情面板时触发（智能三重守卫）
 - **数据库在远程 Azure VM 上** — `data/signals.db` 本地仅空库，排查持仓/自选/信号问题必须 SSH 到 Azure VM 查询
 - scan_market 级联失败保护（3+ A 股连续失败 → 暂停重连 baostock）+ 持仓/自选 A 股全缺失时末尾重试一轮，避免瞬时故障导致关键股票丢失
+- 回填 K 线日期去重 — baostock 偶发返回重复日期行，`drop_duplicates(subset=["date"])` 双层防护（data.py + tracker.py），10d/20d 增加日历天安全阀（14/28天）
+- scan_market 轻量冲突检测 — 用 OBV 斜率代替 AKShare 资金流向（零额外网络请求），5 种冲突类型（技术vs资金/个股vs大盘/放量下跌/缩量上涨），Dashboard 卡片直接渲染金色框 + 琥珀色冲突摘要文字
