@@ -320,6 +320,8 @@ def update_outcomes(market_data) -> dict[str, Any]:
                 # 注意：A股和美股交易日不同，但 iloc[4] 取的是各自市场的第5个交易日，
                 # 这是正确的——美股用美股交易日，A股用A股交易日。
                 signal_dt = signal_date.date()
+                # 按日期去重（baostock 偶发重复行，会膨胀 future 导致 20d 错填）
+                df = df.drop_duplicates(subset=["date"]).reset_index(drop=True)
                 future = df[df["date"].dt.date > signal_dt]
 
                 updates = {}
@@ -334,8 +336,8 @@ def update_outcomes(market_data) -> dict[str, Any]:
                     updates["outcome_5d"] = outcome5
                     updated["5d"] += 1
 
-                # 10日回填
-                if row["price_10d"] is None and len(future) >= 10:
+                # 10日回填（至少 14 日历天才可能有 10 个交易日）
+                if row["price_10d"] is None and days_elapsed >= 14 and len(future) >= 10:
                     p10 = float(future.iloc[9]["close"])
                     pct10 = (p10 / price_at - 1) * 100
                     outcome10 = _judge_outcome(score, pct10)
@@ -344,8 +346,8 @@ def update_outcomes(market_data) -> dict[str, Any]:
                     updates["outcome_10d"] = outcome10
                     updated["10d"] += 1
 
-                # 20日回填
-                if row["price_20d"] is None and len(future) >= 20:
+                # 20日回填（至少 28 日历天才可能有 20 个交易日）
+                if row["price_20d"] is None and days_elapsed >= 28 and len(future) >= 20:
                     p20 = float(future.iloc[19]["close"])
                     pct20 = (p20 / price_at - 1) * 100
                     outcome20 = _judge_outcome(score, pct20)

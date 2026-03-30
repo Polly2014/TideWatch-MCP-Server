@@ -663,4 +663,4 @@ def get_stock_daily_for_backfill(symbol: str, days: int = 60) -> pd.DataFrame:
     df = pd.DataFrame(rows, columns=["date", "close"])
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
     df["date"] = pd.to_datetime(df["date"])
-    return df.dropna(subset=["close"]).sort_values("date").tail(days).reset_index(drop=True)
+    return df.dropna(subset=["close"]).drop_duplicates(subset=["date"]).sort_values("date").tail(days).reset_index(drop=True)
