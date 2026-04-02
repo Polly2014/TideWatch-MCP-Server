@@ -389,6 +389,12 @@ def _run_scan_warmup():
         "pool_size": {"total": len(all_symbols), "scanned": len(results)},
         "timestamp": _now_bj().isoformat(),
     }
+    # 残缺缓存覆盖保护：成功率过低时不覆盖旧缓存
+    scan_ratio = len(results) / len(all_symbols) if all_symbols else 0
+    if scan_ratio < 0.5 and _scan_cache["result"]:
+        logger.warning(f"⚠️ 预热扫描成功率过低 ({len(results)}/{len(all_symbols)} = {scan_ratio:.0%})，保留旧缓存")
+        return
+
     _scan_cache["result"] = scan_result
     _scan_cache["time"] = _time.monotonic()
 
@@ -1492,6 +1498,13 @@ def _scan_market_sync(top_n: int):
         },
         "timestamp": _now_bj().isoformat(),
     }
+
+    # 残缺缓存覆盖保护：成功率过低时不覆盖旧缓存
+    scan_ratio = len(results) / len(all_symbols) if all_symbols else 0
+    if scan_ratio < 0.5 and _scan_cache["result"]:
+        logger.warning(f"⚠️ 扫描成功率过低 ({len(results)}/{len(all_symbols)} = {scan_ratio:.0%})，保留旧缓存")
+        output = {k: v for k, v in _scan_cache["result"].items() if not k.startswith("_")}
+        return output
 
     # 缓存结果
     _scan_cache["result"] = scan_result
