@@ -10,6 +10,7 @@ URL=http://localhost:8889/mcp
 
 # ── 交易日检测 — 非交易日(节假日/周末) early exit ──
 # 用 baostock 查沪深300今天有没有 K 线，无数据 = 非交易日
+# 如果 baostock 自身挂了（返回空），宁可空跑也不漏跑
 TODAY_BJ=$(TZ=Asia/Shanghai date +%Y-%m-%d)
 IS_TRADING=$(cd /home/azureuser/GitHub_Workspace/TideWatch-MCP-Server && poetry run python3 -c "
 import baostock as bs
@@ -22,7 +23,9 @@ bs.logout()
 print('YES' if rows else 'NO')
 " 2>/dev/null)
 
-if [ "$IS_TRADING" != "YES" ]; then
+if [ -z "$IS_TRADING" ]; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Trading day check failed (baostock error?), running anyway" >> $LOG
+elif [ "$IS_TRADING" = "NO" ]; then
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $TODAY_BJ is not a trading day, skipping" >> $LOG
     exit 0
 fi
