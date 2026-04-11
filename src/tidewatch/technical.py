@@ -287,9 +287,9 @@ class TechnicalAnalyzer:
             score -= 25
             reasons_bear.append("均线空头排列")
         else:
-            # 非完美排列时看 MA5 斜率方向
+            # 非完美排列时看 MA5 斜率方向（v3: +8→+4，回填含MA5上行仅50%胜率）
             if ma["ma5_slope"] > 0.3:
-                score += 8
+                score += 4
                 reasons_bull.append(f"MA5上行({ma['ma5_slope']:+.1f}%)")
             elif ma["ma5_slope"] < -0.3:
                 score -= 8
@@ -428,7 +428,7 @@ class TechnicalAnalyzer:
                 score += 8
                 reasons_bull.append("三连阳")
             elif p == "三连阴":
-                score -= 8
+                score -= 12  # v3: -8→-12，回填84%胜率最强看空指标
                 reasons_bear.append("三连阴")
             elif p == "长下影线(锤子)":
                 score += 5

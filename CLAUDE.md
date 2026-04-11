@@ -53,7 +53,12 @@ TideWatch-MCP-Server/
 
 **⚠️ 数据库在远程 Azure VM 上**：`data/signals.db`（含持仓、自选、账户资金、信号记录）只在 Azure VM 有实际数据，本地仅有空库。排查数据问题时必须 SSH 到远程查询：
 ```bash
-ssh -F ssh.config Azure-Server "sqlite3 ~/GitHub_Workspace/TideWatch-MCP-Server/data/signals.db 'SELECT * FROM holdings;'"
+# sqlite3 已安装 (2026-04-11)，可直接在 Azure VM 上查询
+DB="~/GitHub_Workspace/TideWatch-MCP-Server/data/signals.db"
+ssh -F ssh.config Azure-Server "sqlite3 -header -csv $DB 'SELECT * FROM holdings;'"
+ssh -F ssh.config Azure-Server "sqlite3 -header -csv $DB 'SELECT timestamp,symbol,name,score,direction,regime,pct_5d,outcome_5d FROM signals ORDER BY timestamp DESC LIMIT 20;'"
+ssh -F ssh.config Azure-Server "sqlite3 -header -csv $DB 'SELECT * FROM watchlist;'"
+ssh -F ssh.config Azure-Server "sqlite3 -header -csv $DB 'SELECT * FROM account;'"
 ```
 
 ## MCP Tools
@@ -83,18 +88,19 @@ ssh -F ssh.config Azure-Server "sqlite3 ~/GitHub_Workspace/TideWatch-MCP-Server/
 4. **MCP-Native** — 在 Claude/Cursor 中直接使用，UI 只是引擎的皮肤
 5. **数据驱动进化** — 每次策略调整必须有回填数据支撑，详见 [策略进化日志](docs/strategy-evolution.md)
 
-### 信号阈值 (v2, 2026-03-30)
+### 信号阈值 (v3, 2026-04-11)
 
-基于 52 条回填数据调整，详细分析见 [docs/strategy-evolution.md](docs/strategy-evolution.md)：
+基于 91 条回填数据调整（Polly + 小龙虾交叉验证），详见 [docs/strategy-evolution.md](docs/strategy-evolution.md)：
 
 | 评分 | 信号 | 备注 |
 |------|------|------|
-| ≥ +50 | 看多 | v2 提高门槛（v1 是 +25），回填 [+50,+75) 100% 正确 |
-| +25 ~ +50 | 偏多 / 中性 | bear/mild_bear 体制下强制中性（回填 0/4 全错） |
-| +8 ~ +25 | 偏多 | |
+| ≥ +50 | 看多 | mild_bear 下也降为中性（mild_bear 57.1% 胜率） |
+| +8 ~ +50 | 中性观望 | v3 消灭偏多（[+8,+50) 仅 27.3% 胜率，不如掷硬币） |
 | -8 ~ +8 | 中性观望 | |
-| -25 ~ -8 | 偏空 | |
-| ≤ -25 | 看空 | 81.6% 胜率，不调整 |
+| -25 ~ -8 | 偏空 | mild_bear 下降为中性 |
+| ≤ -25 | 看空 | 73.4% 胜率，不调整 |
+
+**v3 置信度**: `base = min(|score|, 100)` → `|score|≥85: ×0.7`（过度自信衰减）→ `方向翻转: ×0.6`（翻转惩罚）
 
 ## Roadmap
 
@@ -193,6 +199,16 @@ SSH 配置见 `ssh.config`（git-ignored），快捷连接：
 ssh -F ssh.config Azure-Server
 ```
 
+**Azure VM 上 poetry 路径**：`~/miniforge3/bin/poetry`（不在 PATH 中，SSH 远程执行时需用全路径）
+```bash
+ssh -F ssh.config Azure-Server "cd ~/GitHub_Workspace/TideWatch-MCP-Server && ~/miniforge3/bin/poetry run python ..."
+```
+
+**sqlite3 已安装** (2026-04-11)，可直接查询数据库无需走 poetry：
+```bash
+ssh -F ssh.config Azure-Server "sqlite3 -header ~/GitHub_Workspace/TideWatch-MCP-Server/data/signals.db '.tables'"
+```
+
 服务管理：
 ```bash
 ssh -F ssh.config Azure-Server "sudo systemctl status tidewatch"   # 状态
@@ -250,7 +266,7 @@ tidewatch.polly.wang:443 (Nginx + Let's Encrypt SSL)
 - `stock_zh_a_spot_em()` 在本地 Mac 和 Azure VM 上均无法使用 — 根因是东方财富 `push2.eastmoney.com` 对非浏览器请求做了反爬限制（SSL 握手成功但返回 Empty reply），与 DNS 和地域无关。影响范围：`scan_market`、`get_stock_realtime`、`get_stock_name`（已有 fallback）。其他 AKShare 接口（日K线 `stock_zh_a_hist`、资金流向、新闻等）正常
 - MCP 工具不要加 `dict[str, Any]` 返回类型注解（FastMCP 2.x outputSchema 冲突）
 - 日志必须输出到 stderr（MCP 用 stdout 通信）
-- 信号记录已加当天去重：同一 symbol + 同一 score 当天内不重复入库（前端额外用 `date|symbol|score` key 去重展示）
+- 信号记录已加当天去重：同一 symbol 当天只保留一条（score 变了 UPDATE），`skip_llm=True` 不写信号（前端额外用 `date|symbol` key 去重展示）
 - 时间戳均使用北京时间 (UTC+8)，通过 `_now_bj()` 统一处理，Azure VM 默认 UTC
 - `analyze_stock` 股票名称解析链：持仓名称 → 自选名称 → HOT_NAMES → get_stock_name()，避免 push2 失效时显示代码
 - 后台预热仅在北京时间 7:00-23:59 执行，凌晨 0-7 点跳过（东方财富维护窗口断连）
@@ -269,4 +285,6 @@ tidewatch.polly.wang:443 (Nginx + Let's Encrypt SSL)
 - 回填 K 线日期去重 — baostock 偶发返回重复日期行，`drop_duplicates(subset=["date"])` 双层防护（data.py + tracker.py），10d/20d 增加日历天安全阀（14/28天）
 - scan_market 轻量冲突检测 — 用 OBV 斜率代替 AKShare 资金流向（零额外网络请求），5 种冲突类型（技术vs资金/个股vs大盘/放量下跌/缩量上涨），Dashboard 卡片直接渲染金色框 + 琥珀色冲突摘要文字
 - scan_market 盘中缓存盲区修复（2026-04-08 🦞9.0/10）— 非盘中时检查缓存 timestamp，若为当天 15:30 前的盘中数据则强制走 `_run_scan_warmup` 刷新（含 scan_cache.json 持久化）。根因：baostock 午后宕机 → 缓存冻结在 13:01 → 15:05 后 `_is_market_hours()=False` → cron/Dashboard 永远返回旧数据
-- `_run_scan_warmup` 是 scan_market 唯一的扫描实现（2026-04-08 统一，删除旧 `_scan_market_sync` 196 行），所有路径（预热/盘中刷新/冷启动/强制刷新）共用，含 v2 信号阈值 + 冲突检测 + 磁盘持久化
+- 信号去重升级为 symbol 级别（2026-04-08）— 同一 symbol 当天只保留一条信号，score 变了 UPDATE 而非 INSERT。`skip_llm=True` 模式不写信号（防 Dashboard 点击和冒烟测试污染信号池）
+- Dashboard 详情面板缓存校验（2026-04-08）— 写入 `detailCache` 前验证 `adjusted_score != null`，防 baostock 瞬时故障返回的残缺报告被缓存导致休盘期间永远显示空白
+- **双层 cron 并存** — `tidewatch-daily.sh`（UTC 10:00）负责 scan_market + analyze_stock + 回填；Jerry/OpenClaw 的 cron（也 UTC 10:00）也对每只持仓调 `analyze_stock`（完整版含 LLM）+ 画图 + 发微信简报。信号去重已保证不重复写入，但 LLM 调用冗余。后续优化方向：tidewatch-daily.sh 负责数据层，Jerry 只读缓存不重复分析

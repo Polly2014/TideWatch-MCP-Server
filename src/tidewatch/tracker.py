@@ -346,31 +346,41 @@ def update_outcomes(market_data) -> dict[str, Any]:
                 if row["price_5d"] is None and len(future) >= 5:
                     p5 = float(future.iloc[4]["close"])
                     pct5 = (p5 / price_at - 1) * 100
-                    outcome5 = _judge_outcome(score, pct5)
-                    updates["price_5d"] = p5
-                    updates["pct_5d"] = round(pct5, 2)
-                    updates["outcome_5d"] = outcome5
-                    updated["5d"] += 1
+                    # v3 sanity check: 偏差>50%跳过（防脏数据，如赛力斯 id=82 的 -90.56%）
+                    if abs(pct5) > 50:
+                        logger.warning(f"⚠️ 5d回填异常跳过: {symbol} price_at={price_at} p5={p5} pct={pct5:.1f}%")
+                    else:
+                        outcome5 = _judge_outcome(score, pct5)
+                        updates["price_5d"] = p5
+                        updates["pct_5d"] = round(pct5, 2)
+                        updates["outcome_5d"] = outcome5
+                        updated["5d"] += 1
 
                 # 10日回填（至少 14 日历天才可能有 10 个交易日）
                 if row["price_10d"] is None and days_elapsed >= 14 and len(future) >= 10:
                     p10 = float(future.iloc[9]["close"])
                     pct10 = (p10 / price_at - 1) * 100
-                    outcome10 = _judge_outcome(score, pct10)
-                    updates["price_10d"] = p10
-                    updates["pct_10d"] = round(pct10, 2)
-                    updates["outcome_10d"] = outcome10
-                    updated["10d"] += 1
+                    if abs(pct10) > 50:
+                        logger.warning(f"⚠️ 10d回填异常跳过: {symbol} price_at={price_at} p10={p10} pct={pct10:.1f}%")
+                    else:
+                        outcome10 = _judge_outcome(score, pct10)
+                        updates["price_10d"] = p10
+                        updates["pct_10d"] = round(pct10, 2)
+                        updates["outcome_10d"] = outcome10
+                        updated["10d"] += 1
 
                 # 20日回填（至少 28 日历天才可能有 20 个交易日）
                 if row["price_20d"] is None and days_elapsed >= 28 and len(future) >= 20:
                     p20 = float(future.iloc[19]["close"])
                     pct20 = (p20 / price_at - 1) * 100
-                    outcome20 = _judge_outcome(score, pct20)
-                    updates["price_20d"] = p20
-                    updates["pct_20d"] = round(pct20, 2)
-                    updates["outcome_20d"] = outcome20
-                    updated["20d"] += 1
+                    if abs(pct20) > 50:
+                        logger.warning(f"⚠️ 20d回填异常跳过: {symbol} price_at={price_at} p20={p20} pct={pct20:.1f}%")
+                    else:
+                        outcome20 = _judge_outcome(score, pct20)
+                        updates["price_20d"] = p20
+                        updates["pct_20d"] = round(pct20, 2)
+                        updates["outcome_20d"] = outcome20
+                        updated["20d"] += 1
 
                 if updates:
                     set_clause = ", ".join(f"{k} = ?" for k in updates)

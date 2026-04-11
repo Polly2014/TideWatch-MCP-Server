@@ -52,6 +52,16 @@ def check_guardrails(
     if w:
         warnings.append(w)
 
+    # 规则 5: 极端看空超卖反弹风险（v3）
+    w = _check_oversold_bounce(score)
+    if w:
+        warnings.append(w)
+
+    # 规则 6: 趋势疲劳（v3）
+    w = _check_trend_fatigue(symbol)
+    if w:
+        warnings.append(w)
+
     return warnings
 
 
@@ -130,4 +140,44 @@ def _check_repeated_bearish(symbol: str) -> dict | None:
                 }
     except Exception as e:
         logger.warning(f"连续看空检测失败: {e}")
+    return None
+
+
+def _check_oversold_bounce(score: int) -> dict | None:
+    """v3 超卖反弹风险：极端看空（<-85）时胜率下降，[-75,-50) 才是甜蜜区"""
+    if score < -85:
+        return {
+            "type": "oversold_bounce_risk",
+            "severity": "medium",
+            "message": f"📉 超卖反弹风险：评分 {score:+d} 极度偏空。回填数据显示 [-100,-75) 胜率 69% 低于 [-75,-50) 的 86%，可能已过度下跌。",
+            "advice": "极端看空不等于继续跌。如果已持仓想止损可以；如果想做空追空，注意超卖反弹风险。",
+        }
+    return None
+
+
+def _check_trend_fatigue(symbol: str) -> dict | None:
+    """v3 趋势疲劳：同一 symbol 连续 5 天以上同方向信号，均值回归风险升高"""
+    try:
+        recent = get_recent_signals(days=14, symbol=symbol)
+        if len(recent) < 5:
+            return None
+        last_5 = recent[:5]
+        all_bearish = all(s.get("direction") in ("看空", "偏空") for s in last_5)
+        all_bullish = all(s.get("direction") in ("看多", "偏多") for s in last_5)
+        if all_bearish:
+            return {
+                "type": "trend_fatigue",
+                "severity": "medium",
+                "message": f"🔄 趋势疲劳：{symbol} 连续 {len(last_5)} 次看空信号，均值回归风险升高。",
+                "advice": "连续单边信号后胜率显著下降（和而泰连续看空后全错）。此时信号仅供参考，注意可能的反弹。",
+            }
+        if all_bullish:
+            return {
+                "type": "trend_fatigue",
+                "severity": "medium",
+                "message": f"🔄 趋势疲劳：{symbol} 连续 {len(last_5)} 次看多信号，回调风险升高。",
+                "advice": "连续看多后注意获利了结，不要过度追涨。",
+            }
+    except Exception as e:
+        logger.warning(f"趋势疲劳检测失败: {e}")
     return None
