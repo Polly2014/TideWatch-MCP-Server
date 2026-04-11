@@ -768,7 +768,7 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
             direction=final_signal,
             price=report["stock"]["price"],
             regime=regime_result.get("regime", "unknown"),
-            confidence=tech["trend"]["confidence"],
+            confidence=_calc_confidence(adjusted_score, symbol),
             reasons_bull=tech["trend"].get("reasons_bull", []),
             reasons_bear=tech["trend"].get("reasons_bear", []),
             conflicts=conflicts,
@@ -1383,6 +1383,8 @@ def _calc_confidence(adjusted_score: int, symbol: str) -> int:
         if recent:
             prev = recent[0]
             prev_dir = prev.get("direction", "")
+            # 注意：这里检测的是「评分方向翻转」而非「信号方向翻转」
+            # v3 下 [+8,+50) 的 final_signal 是"中性观望"，但评分确实从负转正，仍属方向翻转
             curr_bullish = adjusted_score >= 8
             curr_bearish = adjusted_score <= -8
             prev_bullish = prev_dir in ("看多", "偏多")

@@ -149,33 +149,44 @@ def _check_oversold_bounce(score: int) -> dict | None:
         return {
             "type": "oversold_bounce_risk",
             "severity": "medium",
-            "message": f"📉 超卖反弹风险：评分 {score:+d} 极度偏空。回填数据显示 [-100,-75) 胜率 69% 低于 [-75,-50) 的 86%，可能已过度下跌。",
+            "message": f"📉 超卖反弹风险：评分 {score:+d} 极度偏空。回填数据显示极端看空区间胜率低于中度看空区间，可能已过度下跌。",
             "advice": "极端看空不等于继续跌。如果已持仓想止损可以；如果想做空追空，注意超卖反弹风险。",
         }
     return None
 
 
 def _check_trend_fatigue(symbol: str) -> dict | None:
-    """v3 趋势疲劳：同一 symbol 连续 5 天以上同方向信号，均值回归风险升高"""
+    """v3 趋势疲劳：同一 symbol 连续 5 个交易日同方向信号，均值回归风险升高"""
     try:
         recent = get_recent_signals(days=14, symbol=symbol)
         if len(recent) < 5:
             return None
-        last_5 = recent[:5]
-        all_bearish = all(s.get("direction") in ("看空", "偏空") for s in last_5)
-        all_bullish = all(s.get("direction") in ("看多", "偏多") for s in last_5)
+        # 按日期去重——每天只取最后一条，避免同天多条信号虚增连续天数
+        seen_dates: set[str] = set()
+        daily_signals: list[dict] = []
+        for s in recent:
+            d = s.get("timestamp", "")[:10]
+            if d and d not in seen_dates:
+                seen_dates.add(d)
+                daily_signals.append(s)
+            if len(daily_signals) >= 5:
+                break
+        if len(daily_signals) < 5:
+            return None
+        all_bearish = all(s.get("direction") in ("看空", "偏空") for s in daily_signals)
+        all_bullish = all(s.get("direction") in ("看多", "偏多") for s in daily_signals)
         if all_bearish:
             return {
                 "type": "trend_fatigue",
                 "severity": "medium",
-                "message": f"🔄 趋势疲劳：{symbol} 连续 {len(last_5)} 次看空信号，均值回归风险升高。",
+                "message": f"🔄 趋势疲劳：{symbol} 连续 {len(daily_signals)} 个交易日看空信号，均值回归风险升高。",
                 "advice": "连续单边信号后胜率显著下降（和而泰连续看空后全错）。此时信号仅供参考，注意可能的反弹。",
             }
         if all_bullish:
             return {
                 "type": "trend_fatigue",
                 "severity": "medium",
-                "message": f"🔄 趋势疲劳：{symbol} 连续 {len(last_5)} 次看多信号，回调风险升高。",
+                "message": f"🔄 趋势疲劳：{symbol} 连续 {len(daily_signals)} 个交易日看多信号，回调风险升高。",
                 "advice": "连续看多后注意获利了结，不要过度追涨。",
             }
     except Exception as e:
