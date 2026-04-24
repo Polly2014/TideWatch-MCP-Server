@@ -232,13 +232,15 @@ def _run_scan_warmup():
                 name = market_data.get_stock_name(str(code))
             raw_score = tech_result["trend"]["score"]
             adjusted = max(-100, min(100, raw_score + regime_bias))
-            # v3 信号阈值（≥50 才看多, [+8,+50) 全中性, mild_bear 下 |score|<50 全中性）
+            # v4 信号阈值（P1: 偏空消灭, P2: mild_bull 看空收窄到 -35）
             if adjusted >= 50:
                 sig = "中性观望" if regime_name == "mild_bear" else "看多"
             elif adjusted >= 8: sig = "中性观望"
-            elif adjusted <= -25: sig = "看空"
-            elif adjusted <= -8:
-                sig = "中性观望" if regime_name == "mild_bear" else "偏空"
+            elif adjusted <= -25:
+                if regime_name == "mild_bull" and adjusted > -35:
+                    sig = "中性观望"
+                else:
+                    sig = "看空"
             else: sig = "中性观望"
 
             # 轻量冲突检测（用 OBV 斜率代替资金流向，零额外网络请求）
@@ -624,26 +626,31 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     adjusted_score = raw_score + regime_adj["signal_bias"]
     adjusted_score = max(-100, min(100, adjusted_score))
 
-    # 8. 最终信号（v3: ≥+50 才看多, [+8,+50) 全部中性, mild_bear 下 |score|<50 全中性, 基于 91 条回填数据）
+    # 8. 置信度先算（v4 P0 需要用 confidence 门槛过滤弱信号）
     regime_name = regime_result.get("regime", "")
-    if adjusted_score >= 50:
-        # mild_bear 下 score<50 全中性（v3 扩展：mild_bear 57.1% 胜率，弱信号不可信）
+    confidence_val = _calc_confidence(adjusted_score, symbol)
+
+    # 9. 最终信号（v4, 基于 135 条回填数据, 🦞 交叉验证）
+    #   P0: confidence < 40 强制中性（低 conf 47.8% ≈ 抛硬币, 高 conf 72.1%）
+    #   P1: 偏空消灭 — [-25,-8) 合入中性（40% 胜率 + 反向收益 +2.07%）
+    #   P2: mild_bull 下看空阈值收窄到 -35（mild_bull+偏空 33.3%）
+    if confidence_val < 40:
+        final_signal = "中性观望"
+    elif adjusted_score >= 50:
         if regime_name == "mild_bear":
             final_signal = "中性观望"
         else:
             final_signal = "看多"
     elif adjusted_score >= 8:
-        # v3: [+8,+50) 全部中性观望（回填 11 条胜率仅 27.3%）
         final_signal = "中性观望"
     elif adjusted_score <= -25:
-        final_signal = "看空"
-    elif adjusted_score <= -8:
-        # mild_bear 下弱空也不可信
-        if regime_name == "mild_bear":
+        # P2: mild_bull 下收窄到 -35 才算看空（[-35,-25) 在 mild_bull 下中性）
+        if regime_name == "mild_bull" and adjusted_score > -35:
             final_signal = "中性观望"
         else:
-            final_signal = "偏空"
+            final_signal = "看空"
     else:
+        # P1: [-25,-8) 原偏空区间全部归入中性观望
         final_signal = "中性观望"
 
     server_stats["analyses_completed"] += 1
@@ -692,7 +699,7 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
             "direction": final_signal,
             "raw_score": raw_score,
             "adjusted_score": adjusted_score,
-            "confidence": _calc_confidence(adjusted_score, symbol),
+            "confidence": confidence_val,
             "regime_adjustment": regime_adj["signal_bias"],
         },
         "technical": tech,
@@ -768,7 +775,7 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
             direction=final_signal,
             price=report["stock"]["price"],
             regime=regime_result.get("regime", "unknown"),
-            confidence=_calc_confidence(adjusted_score, symbol),
+            confidence=confidence_val,
             reasons_bull=tech["trend"].get("reasons_bull", []),
             reasons_bear=tech["trend"].get("reasons_bear", []),
             conflicts=conflicts,
@@ -1364,11 +1371,12 @@ def _bg_refresh_scan():
 
 def _calc_confidence(adjusted_score: int, symbol: str) -> int:
     """
-    v3 置信度计算 — 过度自信衰减 + 翻转惩罚
+    v4 置信度计算 — 过度自信衰减 + 翻转惩罚 + P0 门槛
 
-    数据依据 (91条回填):
-    - |score| [70,85): 89.5% 胜率（甜蜜区）
-    - |score| [85,95): 56.3% 胜率（过度自信区）
+    数据依据 (135条回填):
+    - 高 conf (70+): 72.1% 胜率
+    - 中 conf (40-69): 50.0% 胜率
+    - 低 conf (<40): 47.8% 胜率 → P0: 强制中性
     - 翻转信号: 30% 胜率 vs 非翻转 71.6%
     """
     conf = min(abs(adjusted_score), 100)

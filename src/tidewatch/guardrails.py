@@ -156,7 +156,8 @@ def _check_oversold_bounce(score: int) -> dict | None:
 
 
 def _check_trend_fatigue(symbol: str) -> dict | None:
-    """v3 趋势疲劳：同一 symbol 连续 5 个交易日同方向信号，均值回归风险升高"""
+    """v4 趋势疲劳：同一 symbol 连续 5 个交易日同方向信号，均值回归风险升高
+    P3: 仅对非看空方向生效（看空连续 68.9% 胜率，不衰减）"""
     try:
         recent = get_recent_signals(days=14, symbol=symbol)
         if len(recent) < 5:
@@ -173,15 +174,8 @@ def _check_trend_fatigue(symbol: str) -> dict | None:
                 break
         if len(daily_signals) < 5:
             return None
-        all_bearish = all(s.get("direction") in ("看空", "偏空") for s in daily_signals)
+        # P3: 看空连续信号 68.9% 胜率，不触发疲劳衰减
         all_bullish = all(s.get("direction") in ("看多", "偏多") for s in daily_signals)
-        if all_bearish:
-            return {
-                "type": "trend_fatigue",
-                "severity": "medium",
-                "message": f"🔄 趋势疲劳：{symbol} 连续 {len(daily_signals)} 个交易日看空信号，均值回归风险升高。",
-                "advice": "连续单边信号后胜率显著下降（和而泰连续看空后全错）。此时信号仅供参考，注意可能的反弹。",
-            }
         if all_bullish:
             return {
                 "type": "trend_fatigue",

@@ -88,19 +88,22 @@ ssh -F ssh.config Azure-Server "sqlite3 -header -csv $DB 'SELECT * FROM account;
 4. **MCP-Native** — 在 Claude/Cursor 中直接使用，UI 只是引擎的皮肤
 5. **数据驱动进化** — 每次策略调整必须有回填数据支撑，详见 [策略进化日志](docs/strategy-evolution.md)
 
-### 信号阈值 (v3, 2026-04-11)
+### 信号阈值 (v4, 2026-04-24)
 
-基于 91 条回填数据调整（Polly + 小龙虾交叉验证），详见 [docs/strategy-evolution.md](docs/strategy-evolution.md)：
+基于 135 条回填数据调整（Polly + 小龙虾交叉验证），详见 [docs/strategy-evolution.md](docs/strategy-evolution.md)：
 
 | 评分 | 信号 | 备注 |
 |------|------|------|
-| ≥ +50 | 看多 | mild_bear 下也降为中性（mild_bear 57.1% 胜率） |
-| +8 ~ +50 | 中性观望 | v3 消灭偏多（[+8,+50) 仅 27.3% 胜率，不如掷硬币） |
+| conf < 40 | 中性观望 | **P0**: 低 confidence 47.8% ≈ 抛硬币，强制降级（高 conf 72.1%） |
+| ≥ +50 | 看多 | mild_bear 下降为中性 |
+| +8 ~ +50 | 中性观望 | v3 消灭偏多（35.3% 胜率） |
 | -8 ~ +8 | 中性观望 | |
-| -25 ~ -8 | 偏空 | mild_bear 下降为中性 |
-| ≤ -25 | 看空 | 73.4% 胜率，不调整 |
+| -25 ~ -8 | 中性观望 | **P1**: 偏空消灭（40% 胜率 + 反向收益 +2.07%） |
+| ≤ -25 | 看空 | mild_bull 下收窄到 ≤-35（**P2**: mild_bull+偏空 33.3%） |
 
-**v3 置信度**: `base = min(|score|, 100)` → `|score|≥85: ×0.7`（过度自信衰减）→ `方向翻转: ×0.6`（翻转惩罚）
+**v4 置信度**: `base = min(|score|, 100)` → `|score|≥85: ×0.7`（过度自信衰减）→ `方向翻转: ×0.6`（翻转惩罚）→ `conf < 40: 强制中性`（P0 门槛）
+
+**v4 趋势疲劳**: 连续同向 5 天仅对**看多**触发（**P3**: 看空连续 68.9% 胜率不衰减）
 
 ## Roadmap
 
