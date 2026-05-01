@@ -66,6 +66,7 @@ from .portfolio import (
     add_watchlist, remove_watchlist, get_watchlist,
     set_account_info, get_account_info,
     get_scan_pool, HOT_POOL, HOT_NAMES,
+    register_change_callback,
 )
 from .regime import RegimeDetector
 from .technical import TechnicalAnalyzer
@@ -442,6 +443,29 @@ def _load_disk_cache():
 
 # 启动时先尝试从磁盘恢复缓存
 _load_disk_cache()
+
+
+def _invalidate_scan_cache():
+    """持仓/账户变更时清除 scan_cache，确保下次 scan_market 重建
+
+    清除两层：
+    1. 内存 _scan_cache（MCP 进程内）
+    2. 磁盘 scan_cache.json（重启后也不会读到旧数据）
+    """
+    _scan_cache["result"] = None
+    _scan_cache["time"] = 0
+    try:
+        cache_path = Path(__file__).parent.parent.parent / "data" / "scan_cache.json"
+        if cache_path.exists():
+            cache_path.unlink()
+            logger.info("🗑️ scan_cache.json 已清除（持仓/账户变更）")
+    except Exception as e:
+        logger.debug(f"清除磁盘缓存失败: {e}")
+    logger.info("🔄 scan_cache 已 invalidate（持仓/账户变更）")
+
+
+# 注册回调：portfolio.py 写 DB 后自动 invalidate scan_cache
+register_change_callback(_invalidate_scan_cache)
 
 # 启动后台预热线程（daemon=True 跟随主进程退出）
 _warmup_thread = threading.Thread(target=_warmup_loop, daemon=True)

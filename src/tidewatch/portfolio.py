@@ -11,6 +11,22 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# 持仓/账户变更时自动 invalidate scan_cache 的回调
+# server.py 启动时注册，portfolio.py 在每次写 DB 后调用
+_on_portfolio_changed: list = []
+
+def register_change_callback(fn):
+    """注册持仓/账户变更回调（server.py 调用一次）"""
+    _on_portfolio_changed.append(fn)
+
+def _notify_change():
+    """通知所有注册方：持仓或账户数据已变更"""
+    for fn in _on_portfolio_changed:
+        try:
+            fn()
+        except Exception as e:
+            logger.debug(f"change callback failed: {e}")
+
 # 北京时间 UTC+8（Azure VM 默认 UTC）
 _BJ_TZ = timezone(timedelta(hours=8))
 
@@ -133,6 +149,7 @@ def add_holding(symbol: str, name: str = "", cost: float = 0, shares: int = 0):
     conn.commit()
     conn.close()
     logger.info(f"📌 持仓更新: {symbol} {name} cost={cost} shares={shares}")
+    _notify_change()
 
 
 def remove_holding(symbol: str):
@@ -142,6 +159,7 @@ def remove_holding(symbol: str):
     conn.commit()
     conn.close()
     logger.info(f"📌 持仓移除: {symbol}")
+    _notify_change()
 
 
 def get_holdings() -> list[dict]:
@@ -176,6 +194,7 @@ def set_account_info(cash: float, total_assets: float = 0, market_value: float =
     conn.commit()
     conn.close()
     logger.info(f"💰 账户更新: 可用={cash}, 总资产={total_assets}, 市值={market_value}")
+    _notify_change()
 
 
 def get_account_info() -> dict:
@@ -213,6 +232,7 @@ def add_watchlist(symbol: str, name: str = "", reason: str = ""):
     conn.commit()
     conn.close()
     logger.info(f"👀 自选添加: {symbol} {name}")
+    _notify_change()
 
 
 def remove_watchlist(symbol: str):
@@ -222,6 +242,7 @@ def remove_watchlist(symbol: str):
     conn.commit()
     conn.close()
     logger.info(f"👀 自选移除: {symbol}")
+    _notify_change()
 
 
 def get_watchlist() -> list[dict]:
